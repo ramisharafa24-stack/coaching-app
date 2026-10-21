@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env*.local
+.env.emulator
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+service-account*.json
+.emulator-data
+*-debug.log
