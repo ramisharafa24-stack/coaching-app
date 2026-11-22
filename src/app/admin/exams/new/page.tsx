@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { MathText } from "@/components/MathText";
 import { Button, Card, CardTitle, Chip, Empty, ErrorNote, PageHeader, Spinner } from "@/components/ui";
-import { DIFFICULTIES } from "@/lib/config";
+import { DIFFICULTIES, SUBJECTS } from "@/lib/config";
 import { db } from "@/lib/firebase";
 import { useCollection } from "@/lib/hooks";
 import type { Batch, Difficulty, Exam, Question } from "@/lib/types";
@@ -19,6 +19,8 @@ export default function NewExamPage() {
   const [title, setTitle] = useState("");
   const [batchId, setBatchId] = useState("");
   const [subject, setSubject] = useState("");
+  // Once the subject is picked by hand, changing the batch no longer resets it.
+  const [subjectPicked, setSubjectPicked] = useState(false);
   const [start, setStart] = useState(() => msToDhakaLocal(Math.ceil(Date.now() / 3600000) * 3600000));
   const [duration, setDuration] = useState(30);
   const [marksPer, setMarksPer] = useState(1);
@@ -38,6 +40,25 @@ export default function NewExamPage() {
       setSubject(batches.data[0].subject);
     }
   }, [batches.data, batchId]);
+
+  // Every subject the exam can use: the standard list, plus any other subject found in the
+  // question bank or on a batch. Each comes with how many questions the bank has for it.
+  const subjectOptions = useMemo(() => {
+    const counts = new Map<string, number>(SUBJECTS.map((s) => [s, 0]));
+    for (const b of batches.data) if (b.subject && !counts.has(b.subject)) counts.set(b.subject, 0);
+    for (const q of questions.data) counts.set(q.subject, (counts.get(q.subject) || 0) + 1);
+    return [...counts.entries()].map(([name, count]) => ({ name, count }));
+  }, [batches.data, questions.data]);
+  const batchSubject = batches.data.find((b) => b.id === batchId)?.subject || "";
+
+  function changeSubject(next: string) {
+    if (next === subject) return;
+    setSubject(next);
+    // Selected questions and chapter filters belong to the old subject.
+    setSelected([]);
+    setChapterFilter([]);
+    setNote(null);
+  }
 
   const pool = useMemo(() => questions.data.filter((q) => q.subject === subject), [questions.data, subject]);
   const chapters = useMemo(() => [...new Set(pool.map((q) => q.chapter))].sort(), [pool]);
@@ -132,11 +153,7 @@ export default function NewExamPage() {
                   onChange={(e) => {
                     setBatchId(e.target.value);
                     const b = batches.data.find((x) => x.id === e.target.value);
-                    if (b && b.subject !== subject) {
-                      setSubject(b.subject);
-                      setSelected([]);
-                      setChapterFilter([]);
-                    }
+                    if (b && !subjectPicked) changeSubject(b.subject);
                   }}
                 >
                   {batches.data.map((b) => (
@@ -145,6 +162,35 @@ export default function NewExamPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="label">Subject</label>
+                <select
+                  className="field"
+                  value={subject}
+                  onChange={(e) => {
+                    setSubjectPicked(true);
+                    changeSubject(e.target.value);
+                  }}
+                >
+                  {subjectOptions.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.name} ({s.count}){s.name === batchSubject ? " · batch subject" : ""}
+                    </option>
+                  ))}
+                </select>
+                {subjectPicked && batchSubject && subject !== batchSubject && (
+                  <button
+                    type="button"
+                    className="mt-1 text-xs font-semibold text-brand"
+                    onClick={() => {
+                      setSubjectPicked(false);
+                      changeSubject(batchSubject);
+                    }}
+                  >
+                    Use the batch subject ({batchSubject})
+                  </button>
+                )}
               </div>
               <div>
                 <label className="label">Starts at (Dhaka time)</label>
